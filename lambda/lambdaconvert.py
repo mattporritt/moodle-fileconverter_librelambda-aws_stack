@@ -21,50 +21,15 @@ import boto3
 import os
 import logging
 import uuid
-import tarfile
 import subprocess
-import inspect
 from multiprocessing import Process, Pipe
 
 s3_client = boto3.client('s3')
 logger = logging.getLogger()
 
-INSTDIR = '/tmp/instdir'
-SOFFICE = INSTDIR + '/program/soffice.bin'  # Libre conversion executable.
-CONFDIR = INSTDIR + '/user/config'
-FONTDIR = INSTDIR + '/share/fonts'
-
-fonts_conf = inspect.cleandoc(f'''
-<?xml version="1.0"?>
-<!DOCTYPE fontconfig SYSTEM "fonts.dtd">
-<fontconfig>
-  <dir>{FONTDIR}</dir>
-  <!-- This may or not require font family specs.
-       Currently the only purpose is to stop fontconfig complaining. -->
-</fontconfig>
-''')
+SOFFICE = '/usr/local/lib/libreoffice/program/soffice.bin'  # Libre conversion executable.
 
 keep_files = not os.environ.get('KEEP_FILES', '') == ''
-
-
-def get_libreoffice():
-    """
-    This method downloads and extracts the Libre Office tar archive and extracts
-    it locally for the lambda function to use.
-    As this only needs to happen on Lambda 'cold starts' it first checks if Libre Office
-    is already available.
-    """
-
-    # Only get Libre Office if this is a cold start and we don't arleady have it.
-    if not os.path.exists(SOFFICE):
-        logger.info('Downloading and extracting Libre Office')
-        with tarfile.open(name='/opt/lo.tar.xz', mode="r|xz") as archive:
-            archive.extractall('/tmp')  # Extract to the temp directory of Lambda.
-        with open(CONFDIR + '/fonts.conf', 'w') as fc:
-            fc.write(fonts_conf)
-
-    else:
-        logger.info('Libre Office executable exists already.')
 
 
 def get_object_data(bucket, key):
@@ -85,6 +50,22 @@ def get_object_data(bucket, key):
     sourcefileid = metadata['sourcefileid']
 
     return (targetformat, conversionid, sourcefileid)
+
+
+def process_convert_file(download_path, targetformat):
+    """
+    Wrapper for convert_file to handle retries and exceptions based on status codes.
+    """
+    status_code = convert_file(download_path, targetformat)
+    if status_code == 0:
+        logger.info("Conversion successful.")
+    elif status_code == 81:
+        logger.warning("Conversion failed with status 81, retrying once.")
+        status_code = convert_file(download_path, targetformat)  # Retry once
+        if status_code != 0:
+            raise Exception(f"Retry failed with status code: {status_code}")
+    else:
+        raise Exception(f"Conversion failed with status code: {status_code}")
 
 
 def convert_file(filepath, targetformat):
@@ -110,9 +91,13 @@ def convert_file(filepath, targetformat):
         ]
 
     env = os.environ.copy()
-    env['FONTCONFIG_PATH'] = CONFDIR
-    subprocess.run(commandargs, env=env, timeout=300, check=True)
-    #  TODO: add some logging an error handling.
+    env['HOME'] = '/tmp'  # Set home to /tmp to avoid permission issues.
+    try:
+        subprocess.run(commandargs, env=env, timeout=300, check=True)
+        return 0  # Success
+    except subprocess.CalledProcessError as e:
+        return e.returncode  # Return the error code if subprocess fails
+    #  TODO: add some logging.
 
 
 def action_multiprocessing(multiprocesses):
@@ -156,11 +141,10 @@ def lambda_handler(event, context):
     Upload the converted document to the output S3 bucket.
     """
 
-    #  Set logging
+    # Set logging, default to ERROR (40). DEBUG (10) is the lowest level.
+    # https://docs.python.org/3/library/logging.html#logging-levels
     logging_level = os.environ.get('LoggingLevel', logging.ERROR)
     logger.setLevel(int(logging_level))
-
-    get_libreoffice()
 
     last_exception = None
     try:
@@ -195,8 +179,11 @@ def process(record):
     targetformat, conversionid, sourcefileid = get_object_data(bucket, key)
 
     download_path = '/tmp/{}{}'.format(uuid.uuid4(), key)
-    # Conversion appends .pdf extension to file.
-    upload_path = '{}.pdf'.format(download_path)
+    # Conversion replaces the file extension with .pdf.
+    # Split the original filename from its last extension.
+    base_name, _ = os.path.splitext(download_path)
+    # Append .pdf to the base name.
+    upload_path = f"{base_name}.pdf"
 
     # First multiprocessing split.
     # Download LibreOffice and input bucket object.
@@ -213,7 +200,7 @@ def process(record):
     # Convert file and remove original from input bucket.
     multiprocesses = (
         {
-            'method': convert_file,
+            'method': process_convert_file,
             'processargs': (download_path, targetformat,),
             'processkwargs': {}
         },

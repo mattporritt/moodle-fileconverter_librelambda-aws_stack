@@ -1,109 +1,137 @@
 # AWS Stack for Libre Lambda Document Converter #
 
-This is the Amazon Web Services (AWS) stack infrastructure for the Libre Officefile converter plugin for the Moodle (https://github.com/catalyst/moodle-fileconverter_librelambda). The primary function of this plugin is to convert student submissions into the PDF file format, to allow teachers to use the annotate PDF functionality of Moodle.
+This is the Amazon Web Services (AWS) stack infrastructure for the [LibreOffice file converter plugin](https://github.com/catalyst/moodle-fileconverter_librelambda) for Moodle LMS.
+The primary function of this plugin is to convert student submissions into the PDF file format, to allow teachers to use the annotate PDF functionality of Moodle.
 
-This contains binaries and scripts necessary for AWS services to provide the conversion to PDF, the primary AWS services used are [Lambda](https://aws.amazon.com/lambda/) and [S3](https://aws.amazon.com/s3/). The root of this repository is given to the plugin `provision.php` script.
+This stack primarily consists of an "input" [S3](https://aws.amazon.com/s3/) bucket, a file converting [Lambda](https://aws.amazon.com/lambda/) function and an "output" S3 bucket.
+Once the stack is setup the associated Moodle plugin uploads files to be converted to the input S3 bucket.  The uploading of these
+input files trigger the Lambda function. The Lambda function uses LibreOffice to convert the file to PDF. Once the files are converted
+the Lambda function moves the converted PDF to the output bucket. The Moodle plugin then downloads the PDF from the output bucket.
+The Lambda function also handles the cleanup of the input bucket and the temporary files.
 
-## Libre Office Archive and Compliation
-This plugin includes precompiled LibreOffice archives as a compressed archive in the */libre* folder of this repository. The archive is uploaded to AWS as part of the provisioning process. Lambda uses the uncompressed binaries to do the actual conversion of the uploaded documents to PDF.
+## Lambda Function and LibreOffice ##
+AWS Lambda functions are able to be built from [custom Docker images](https://docs.aws.amazon.com/lambda/latest/dg/images-create.html).
+This allows for the use of custom binaries and libraries that are not available in the standard Lambda environment.
+This stack uses this feature to build a custom Docker image that includes a custom compiled version of LibreOffice
+that is compatible with the Lambda environment.
 
-The precompiled binary archive for LibreOffice is provided as a convienence to make setting everything up easier. However, you can obtain the LibreOffice source code and compile it yourself. See the section: *Compiling Libre Office* for instructions on how to do this.
+This is an improvement over other approaches, which used a pre-built version of LibreOffice that is
+added to the Lambda function as a layer.
 
-### Compiling Libre Office
-This section will outline how to compile LibreOffice for yourself to be used by AWS Lambda to convert files.
+**Note:** Custom Docker Images for Lambda have a maximum size of 10GB.
 
-There are two main reasons why we need to custom compile LibreOffice to work with AWS Lambda. The first is we need to compile LibreOffice so it works in the same runtime environment as Lambda. The second is that Lambda has very limited disk space (512MB) which we can use to store and execute binaries. So we need to create a very minimal version of LibreOffice to stay under the disk space limits.
+## Build and Push Image ##
+Before the image can be used in the Lambda function it must be built and pushed to the AWS Elastic Container Registry (ECR).
+The following commands can be used to build and push the image.
 
-Knowledge of Docker as well as command line Linux administration is required to compile your own LibreOffice installation.
+**Note:** The following commands assume that the [AWS CLI is installed and configured](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) with the appropriate permissions.
 
-The process to create your own compiled LibreOffice binary archive is:
-* Get the LibreOffice code from the LibreOffice project
-* Compile LibreOffice binaries in a container based on one used for AWS Lambda
-* Create the LibreOffice archive
+If the AWS account you're using doesn't have an ECR registry will need to create one and the link Docker to it,
+so images can then be pushed to ECR.
 
-Following steps are done in the `librelambda/build` directory.
+To create the ECR repository you will need to choose a name for the repository and decide a region to create it in.
+For example, to create a repository called "pdf-repo" in the "ap-southeast-2" region you would use the following command:
+```bash
+aws ecr create-repository --repository-name pdf-repo --region ap-southeast-2
+```
+Next we Authenticate your Docker client to the ECR registry.
+You will need to know your AWS account ID and the region you created the repository in. This should be returned from the create repository command.
+The following command will authenticate your Docker client to the ECR registry:
+```bash
+aws ecr get-login-password --region ap-southeast-2 | docker login --username AWS --password-stdin 123456789012.dkr.ecr.ap-southeast-2.amazonaws.com/pdf-repo
+```
+This second command should return: Login succeeded.
 
-#### Get the LibreOffice code from the LibreOffice project
+Now you can build the Docker image and tag it with the ECR repository URI. Building will take a lot time.
+First, navigate to the `lambda` directory containing the Dockerfile and run the following command to build the image:
+```bash 
+docker build -t libreoffice-lambda .
+```
 
-    wget https://download.documentfoundation.org/libreoffice/src/6.4.7/libreoffice-6.4.7.2.tar.xz
+Before pushing, tag your Docker image with your ECR repository URI:
+```bash
+docker tag libreoffice-lambda:latest <account_id>.dkr.ecr.<region>.amazonaws.com/pdf-repo:latest
+```
 
-This is the latest version in the 6 family at the time of writing. Amazon 2 image is based on Centos 7,
-which proved challenging enough to make us not even consider trying with LibreOffice 7.
+Finally, push the image to the ECR repository:
+```bash
+docker push <account_id>.dkr.ecr.<region>.amazonaws.com/pdf-repo:latest
+```
+This will push the image to the ECR repository and return a digest. This may take some time depending on the upstream bandwidth.
 
-In (unlikely) case that another minor version is requested, `docker build` observes `lo_ver` env var, eg
-    lo_ver=6.4.7.5 docker build ...
+The component of the above command after `docker pussh` is the URI of the image in ECR, for example:
+```bash
+<account_id>.dkr.ecr.<region>.amazonaws.com/pdf-repo:latest
+```
 
-#### Compile LibreOffice binaries
-Build the image and launch a container. Depending on your circumnstances/preferences you may use
-slightly different arguments with `docker` commands:
+## Deploy Stack ##
+Once the image has been pushed to ECR the stack can be deployed using the AWS CloudFormation service and the AWS CLI.
+The following command can be used to deploy the stack:
 
-    docker build -t lo-build .
-    # OR for arm64/aarch64 (graviton):
-    docker build -t lo-build --build-arg ARCH=aarch64 .
-    docker run -it --rm lo-build bash
+```bash
+aws cloudformation create-stack \
+--stack-name my-stack-name \
+--template-body file://path_to_your_template_file.yaml \
+--capabilities CAPABILITY_NAMED_IAM \
+--parameters ParameterKey=BucketPrefix,ParameterValue=<resource bucket prefix> \
+ParameterKey=LambdaFunctionUri,ParameterValue=<Lambda Image URI>
+```
+Replace:
+* `my-stack-name` with the name you want to give the stack, 
+* `path_to_your_template_file.yaml` with the path to the CloudFormation template file, 
+* `<resource bucket prefix>` with the prefix you want to give the S3 buckets and 
+* `<Lambda Image URI>` with the URI of the Docker image in ECR.
 
-This should give you a shell in a running container. In the container shell:
+To check the status of the stack you can use the following command:
+```bash
+aws cloudformation describe-stacks --stack-name my-stack-name
+```
 
-    make
-    # OR for arm64/aarch64 (graviton):
-  :w  CPPFLAGS="-DPNG_ARM_NEON_OPT=0" make
-    strip instdir/program/*
+Once the stack create is complete the following will be returned: with the `describe-stacks` command:
+* S3UserAccessKey: S3 user access key
+* S3UserSecretKey: S3 user secret key
+* InputBucket: S3 Input Bucket
+* OutputBucket: S3 Output Bucket
 
-Once the binaries are compiled (and stripped) you can run the following commands (still in the container shell)
-to test the conversion. You will probably get a fontconfig warning, ignore:
+The S3UserAccessKey and S3UserSecretKey are used by the Moodle plugin to access the S3 buckets.
 
-    echo "hello world" > /tmp/a.txt
-    ./instdir/program/soffice.bin --headless --invisible --nodefault --nofirststartwizard \
-        --nolockcheck --nologo --norestore --convert-to pdf --outdir /tmp /tmp/a.txt
-    ls -l /tmp/a.pdf
+## Testing ##
+Once the stack is deployed you can test the Lambda function by uploading a file to the input bucket.
+The Lambda function should convert the file to PDF and move it to the output bucket.
 
-**Note:** For some reason conversion may silently do nothing. In that case just re-run it.
+The conversion process can be trigged by uploading a file to the input bucket using the AWS CLI.
+We also need to include metadata.
 
-If everything seems fine, pack it up:
+The following command can be used to upload a file to the input bucket:
+```bash
+aws s3 cp /path/to/your/file s3://<input-bucket-name>  --metadata targetformat=pdf,id=123,sourcefileid=456
 
-    tar -cf /lo.tar instdir
+```
+Replace `/path/to/your/file` with the path to the file you want to upload and `<input-bucket-name>` with the name of the input bucket.
 
-Now you have lo.tar in the running container. Do not exit it yet. In another terminal on your computer:
+Once the file has been uploaded to the input bucket the Lambda function should convert the file to PDF and move it to the output bucket.
+The following command can be used to list the contents of the output bucket:
+```bash
+aws s3 ls s3://<output-bucket-name>
+```
+Replace `<output-bucket-name>` with the name of the output bucket.
 
-    docker ps
-    docker cp <container id>:/lo.tar .
-`docker ps` should give you the id of the `lo-build` running container that you will use for copying.
+To download the converted file from the output bucket you can use the following command:
+```bash
+aws s3 cp s3://<output-bucket-name>/<file-name> /path/to/your/output/directory
+```
+Replace `<output-bucket-name>` with the name of the output bucket and `<file-name>` with the name of the file you want to download.
+Because of the way the Moodle expects converted files to be named, the output name will be the same as the input file name.
+So if you uploaded a file called `example.docx` the output file will be called `example.docx`. You'll need to manually rename the file to `example.pdf` to test the conversion outside of Moodle LMS.
 
-After checking that you have `lo.tar` you can leave the container.
-
-**NOTE:** Compiling LibreOffice will take time.
-
-**If something goes wrong:**
-
-    docker run -it --rm --cap-add=SYS_PTRACE --security-opt seccomp=unconfined lo-build bash
-
-If you are rebuilding the `lo-build` image, you can copy tarballs from the running container's
-`<build dir>/external/tarballs/` to the `tarballs` directory. That will save you downloading each time you start new container.
-
-After the above steps are completed follow the instructions in the next section, to create the LibreOffice archive.
-
-#### Create the LibreOffice archive
-Now is time to remove unneeded things from lo.tar if you wish
-(share/gallery,template,fonts/truetype/EmojiOneColor-SVGinOT.ttf...). Either untar/remove/tar back, or
-
-    tar -f lo.tar --delete xyz...
-
-Once you are happy with the content of `lo.tar`:
-
-    xz -e9 lo.tar
-
-And replace the existing `lo.tar.xz`:
-
-    mv lo.tar.xz ..
-
-Next time you run the provisioning script to setup the environment it will use the newly created LibreLambda archive for Lambda.
-
-## Lambda Function
-TODO: this
+## Configuring Moodle LMS ##
+The Moodle plugin requires the following settings to be configured:
+* S3 Access Key
+* S3 Secret Key
 
 ## License ##
 
-2018 Matt Porritt <mattp@catalyst-au.net>
+2018 Matt Porritt <matt.porritt@moodle.com>
 
 This program is free software: you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
