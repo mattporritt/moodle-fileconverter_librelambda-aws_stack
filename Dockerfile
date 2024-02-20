@@ -69,7 +69,52 @@ RUN ./autogen.sh \
     --disable-split-debug \
     --with-system-zlib \
     --without-junit \
-    --with-parallelism=2
-RUN make v=1
-RUN make install
+    --with-parallelism=2 && \
+    make v=1 && \
+    make install && \
+    cd / && \
+    rm -rf /${LO}.1 && \
+    rm /${LO_TAR}
 
+## Define custom INSTDIR for LibreOffice installation
+ENV INSTDIR=/usr/local/lib/libreoffice
+ENV FONTDIR=${INSTDIR}/share/fonts
+
+## Create and write the fonts.conf file
+RUN mkdir -p ${INSTDIR}/user/fonts && \
+    echo '<?xml version="1.0"?>' > ${INSTDIR}/user/fonts/fonts.conf && \
+    echo '<!DOCTYPE fontconfig SYSTEM "fonts.dtd">' >> ${INSTDIR}/user/fonts/fonts.conf && \
+    echo '<fontconfig>' >> ${INSTDIR}/user/fonts/fonts.conf && \
+    echo "  <dir>${FONTDIR}</dir>" >> ${INSTDIR}/user/fonts/fonts.conf && \
+    echo '  <!-- This may or not require font family specs.' >> ${INSTDIR}/user/fonts/fonts.conf && \
+    echo '       Currently the only purpose is to stop fontconfig complaining. -->' >> ${INSTDIR}/user/fonts/fonts.conf && \
+    echo '</fontconfig>' >> ${INSTDIR}/user/fonts/fonts.conf
+
+# Test conversion, should fail the first time.
+RUN echo '{\\rtf1\\ansi\\ansicpg1252\\cocoartf1671\\cocoasubrtf600{\\fonttbl\\f0\\fswiss\\fcharset0 Helvetica;}\\f0\\fs24 \\cf0 This is a line of content in my RTF file.}' > /tmp/my_temp_file.rtf
+RUN /usr/local/lib/libreoffice/program/soffice.bin \
+    --headless \
+    --invisible \
+    --nodefault \
+    --nofirststartwizard \
+    --nolockcheck \
+    --nologo \
+    --norestore \
+    --writer \
+    --convert-to pdf \
+    --outdir /tmp \
+    /tmp/my_temp_file.rtf || [ $? -eq 81 ]
+
+# Test again, must succeed.
+RUN /usr/local/lib/libreoffice/program/soffice.bin \
+    --headless \
+    --invisible \
+    --nodefault \
+    --nofirststartwizard \
+    --nolockcheck \
+    --nologo \
+    --norestore \
+    --writer \
+    --convert-to pdf \
+    --outdir /tmp \
+    /tmp/my_temp_file.rtf
