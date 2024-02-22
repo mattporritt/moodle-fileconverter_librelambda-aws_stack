@@ -42,7 +42,7 @@ aws ecr get-login-password --region ap-southeast-2 | docker login --username AWS
 ```
 This second command should return: Login succeeded.
 
-Now you can build the Docker image and tag it with the ECR repository URI.
+Now you can build the Docker image and tag it with the ECR repository URI. Building will take a lot time.
 First, navigate to the `lambda` directory containing the Dockerfile and run the following command to build the image:
 ```bash 
 docker build -t libreoffice-lambda .

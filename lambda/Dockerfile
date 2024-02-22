@@ -10,15 +10,14 @@ ENV LO_TAR=${LO}.1.tar.xz
 RUN dnf upgrade -y
 RUN dnf install -y tar wget gzip bzip2 xz perl autoconf automake make gcc-c++ zlib-devel \
     which glibc-locale-source glibc-all-langpacks cups-devel fontconfig-devel fontconfig \
-    gperf java-17-amazon-corretto java-17-amazon-corretto-devel libxslt libxslt-devel \
-    python3-devel nss nss-devel nspr nspr-devel libX11-devel libXext-devel libXrender-devel \
-    libXtst-devel libxcb-devel libICE-devel libSM-devel libXt-devel libXmu-devel libXpm-devel \
-    libXrandr-devel bison flex patch gtk3-devel atk-devel cairo-devel glib2-devel git meson \
-    ninja-build pkgconfig libxml2-devel texinfo ant
+    gperf java-17-amazon-corretto java-17-amazon-corretto-devel libxslt-devel libXt-devel \
+    nss-devel nspr-devel bison flex patch ant
 RUN localedef -i en_US -f UTF-8 en_US.UTF-8
 RUN python3 -m pip install setuptools
 
 # Download and compile gcc.
+# LibreOffice 24.2.1 requires gcc 12.3.0. This is greater than the version available in the base
+# image. So we need to compile it from source.
 RUN mkdir /usr/bin/GCC-12 && \
     cd / && \
     wget https://ftp.gnu.org/gnu/gcc/gcc-12.3.0/gcc-12.3.0.tar.gz && \
@@ -73,11 +72,11 @@ RUN ./autogen.sh \
     rm -rf /${LO}.1 && \
     rm /${LO_TAR}
 
-## Define custom INSTDIR for LibreOffice installation.
+# Define custom INSTDIR for LibreOffice installation.
 ENV INSTDIR=/usr/local/lib/libreoffice
 ENV FONTDIR=${INSTDIR}/share/fonts
 
-## Create and write the fonts.conf file.
+# Create and write the fonts.conf file.
 RUN mkdir -p ${INSTDIR}/user/fonts && \
     echo '<?xml version="1.0"?>' > ${INSTDIR}/user/fonts/fonts.conf && \
     echo '<!DOCTYPE fontconfig SYSTEM "fonts.dtd">' >> ${INSTDIR}/user/fonts/fonts.conf && \
