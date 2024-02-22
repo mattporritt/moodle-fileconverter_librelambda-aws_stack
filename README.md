@@ -21,7 +21,42 @@ added to the Lambda function as a layer.
 **Note:** Custom Docker Images for Lambda have a maximum size of 10GB.
 
 ## Build and Push Image ##
+Before the image can be used in the Lambda function it must be built and pushed to the AWS Elastic Container Registry (ECR).
+The following commands can be used to build and push the image.
 
+**Note:** The following commands assume that the [AWS CLI is installed and configured](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) with the appropriate permissions.
+
+If the AWS account you're using doesn't have an ECR registry will need to create one and the link Docker to it,
+so images can then be pushed to ECR.
+
+To create the ECR repository you will need to choose a name for the repository and decide a region to create it in.
+For example, to create a repository called "pdf-repo" in the "ap-southeast-2" region you would use the following command:
+```bash
+aws ecr create-repository --repository-name pdf-repo --region ap-southeast-2
+```
+Next we Authenticate your Docker client to the ECR registry.
+You will need to know your AWS account ID and the region you created the repository in. This should be returned from the create repository command.
+The following command will authenticate your Docker client to the ECR registry:
+```bash
+aws ecr get-login-password --region ap-southeast-2 | docker login --username AWS --password-stdin 123456789012.dkr.ecr.ap-southeast-2.amazonaws.com
+```
+This second command should return: Login succeeded.
+
+Now you can build the Docker image and tag it with the ECR repository URI.
+First, navigate to the `lambda` directory containing the Dockerfile and run the following command to build the image:
+```bash 
+docker build -t libreoffice-lambda .
+```
+
+Before pushing, tag your Docker image with your ECR repository URI:
+```bash
+docker tag libreoffice-lambda:latest <account_id>.dkr.ecr.<region>.amazonaws.com/libreoffice-lambda:latest
+```
+
+Finally, push the image to the ECR repository:
+```bash
+docker push <account_id>.dkr.ecr.<region>.amazonaws.com/libreoffice-lambda:latest
+```
 
 ## Deploy Stack ##
 
