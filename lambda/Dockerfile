@@ -103,3 +103,9 @@ RUN /usr/local/lib/libreoffice/program/soffice.bin \
     --convert-to pdf \
     --outdir /tmp \
     /tmp/my_temp_file.rtf || [ $? -eq 81 ]
+
+# Copy the lamnda function code. \
+COPY lambdaconvert.py ${LAMBDA_TASK_ROOT}
+
+# Set the CMD to your handler.
+CMD ["lambdaconvert.lambda_handler"]

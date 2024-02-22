@@ -26,18 +26,9 @@ Parameters:
     Type: String
     Default: __BUCKET_PREFIX__
     Description: The prefix to use for the input and output buckets.
-  ResourceBucket:
+  LambdaFunctionUri:
     Type: String
-    Default: __BUCKET_PREFIX__-resource
-    Description: The bucket that contains the Lambda archive.
-  LambdaArchiveKey:
-    Type: String
-    Default: lambdaconvert.zip
-    Description: The S3 Key (filename) for the Lambda function archive.
-  LambdaLayerKey:
-    Type: String
-    Default: lo.zip
-    Description: The S3 Key (filename) for the Lambda layer archive.
+    Description: The ECR URI for the Lambda function that converts files to PDF.
 
 Resources:
   InputS3Bucket:
@@ -134,33 +125,21 @@ Resources:
       PolicyName: __STACK__Lambda
       Roles:
         - !Ref LambdaRole
-  LambdaOfficeLayer:
-    Type: "AWS::Lambda::LayerVersion"
-    DeletionPolicy: Delete
-    Properties:
-      Content:
-        S3Bucket: !Ref ResourceBucket
-        S3Key: !Ref LambdaLayerKey
-      Description: The LibreOffice archive to use to convert files
-      LayerName: LambdaOfficeLayer
   LambdaFunction:
     Type: AWS::Lambda::Function
     Description: Lambda Function to convert documents using Libre Office
     Properties:
+      Architectures:
+        - arm64
       Code:
-        S3Bucket: !Ref ResourceBucket
-        S3Key: !Ref LambdaArchiveKey
+        ImageUri: !Ref LambdaFunctionUri
       Environment:
         Variables:
           OutputBucket: !Join [ '-', [!Ref BucketPrefix, 'output'] ]
       FunctionName: __STACK__
-      Handler: lambdaconvert.lambda_handler
-      MemorySize: 256
       Role: !GetAtt LambdaRole.Arn
-      Runtime: python3.8
+      MemorySize: 256
       Timeout: 600
-      Layers:
-        - !Ref LambdaOfficeLayer
   LambdaInvokePermission:
     Type: AWS::Lambda::Permission
     Properties:

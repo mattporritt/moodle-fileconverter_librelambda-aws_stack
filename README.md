@@ -57,9 +57,60 @@ Finally, push the image to the ECR repository:
 ```bash
 docker push <account_id>.dkr.ecr.<region>.amazonaws.com/libreoffice-lambda:latest
 ```
+This will push the image to the ECR repository and return a digest.
 
 ## Deploy Stack ##
+Once the image has been pushed to ECR the stack can be deployed using the AWS CloudFormation service and the AWS CLI.
+The following command can be used to deploy the stack:
 
+```bash
+aws cloudformation create-stack \
+--stack-name my-stack-name \
+--template-body file://path_to_your_template_file.yaml \
+--parameters ParameterKey=BucketPrefix,ParameterValue=<resource bucket prefix> \
+ParameterKey=LambdaFunctionUri,ParameterValue=<Lambda Image URI>
+```
+Replace:
+* `my-stack-name` with the name you want to give the stack, 
+* `path_to_your_template_file.yaml` with the path to the CloudFormation template file, 
+* `<resource bucket prefix>` with the prefix you want to give the S3 buckets and 
+* `<Lambda Image URI>` with the URI of the Docker image in ECR.
+
+Once the stack create is complete the following will be returned:
+* S3UserAccessKey: S3 user access key
+* S3UserSecretKey: S3 user secret key
+* InputBucket: S3 Input Bucket
+* OutputBucket: S3 Output Bucket
+
+The S3UserAccessKey and S3UserSecretKey are used by the Moodle plugin to access the S3 buckets.
+
+## Testing ##
+Once the stack is deployed you can test the Lambda function by uploading a file to the input bucket.
+The Lambda function should convert the file to PDF and move it to the output bucket.
+
+The conversion process can be trigged by uploading a file to the input bucket using the AWS CLI.
+The following command can be used to upload a file to the input bucket:
+```bash
+aws s3 cp /path/to/your/file s3://<input-bucket-name>
+```
+Replace `/path/to/your/file` with the path to the file you want to upload and `<input-bucket-name>` with the name of the input bucket.
+
+Once the file has been uploaded to the input bucket the Lambda function should convert the file to PDF and move it to the output bucket.
+The following command can be used to list the contents of the output bucket:
+```bash
+aws s3 ls s3://<output-bucket-name>
+```
+Replace `<output-bucket-name>` with the name of the output bucket.
+
+To download the converted file from the output bucket you can use the following command:
+```bash
+aws s3 cp s3://<output-bucket-name>/<file-name> /path/to/your/output/directory
+```
+
+## Configuring Moodle LMS ##
+The Moodle plugin requires the following settings to be configured:
+* S3 Access Key
+* S3 Secret Key
 
 ## License ##
 
