@@ -131,13 +131,14 @@ Resources:
     Properties:
       Architectures:
         - arm64
+      Role: !GetAtt LambdaRole.Arn
       Code:
         ImageUri: !Ref LambdaFunctionUri
       Environment:
         Variables:
           OutputBucket: !Join [ '-', [!Ref BucketPrefix, 'output'] ]
+      PackageType: Image
       FunctionName: __STACK__
-      Role: !GetAtt LambdaRole.Arn
       MemorySize: 256
       Timeout: 600
   LambdaInvokePermission:

@@ -38,7 +38,7 @@ Next we Authenticate your Docker client to the ECR registry.
 You will need to know your AWS account ID and the region you created the repository in. This should be returned from the create repository command.
 The following command will authenticate your Docker client to the ECR registry:
 ```bash
-aws ecr get-login-password --region ap-southeast-2 | docker login --username AWS --password-stdin 123456789012.dkr.ecr.ap-southeast-2.amazonaws.com
+aws ecr get-login-password --region ap-southeast-2 | docker login --username AWS --password-stdin 123456789012.dkr.ecr.ap-southeast-2.amazonaws.com/pdf-repo
 ```
 This second command should return: Login succeeded.
 
@@ -50,14 +50,19 @@ docker build -t libreoffice-lambda .
 
 Before pushing, tag your Docker image with your ECR repository URI:
 ```bash
-docker tag libreoffice-lambda:latest <account_id>.dkr.ecr.<region>.amazonaws.com/libreoffice-lambda:latest
+docker tag libreoffice-lambda:latest <account_id>.dkr.ecr.<region>.amazonaws.com/pdf-repo:latest
 ```
 
 Finally, push the image to the ECR repository:
 ```bash
-docker push <account_id>.dkr.ecr.<region>.amazonaws.com/libreoffice-lambda:latest
+docker push <account_id>.dkr.ecr.<region>.amazonaws.com/pdf-repo:latest
 ```
-This will push the image to the ECR repository and return a digest.
+This will push the image to the ECR repository and return a digest. This may take some time depending on the upstream bandwidth.
+
+The component of the above command after `docker pussh` is the URI of the image in ECR, for example:
+```bash
+<account_id>.dkr.ecr.<region>.amazonaws.com/pdf-repo:latest
+```
 
 ## Deploy Stack ##
 Once the image has been pushed to ECR the stack can be deployed using the AWS CloudFormation service and the AWS CLI.
@@ -67,6 +72,7 @@ The following command can be used to deploy the stack:
 aws cloudformation create-stack \
 --stack-name my-stack-name \
 --template-body file://path_to_your_template_file.yaml \
+--capabilities CAPABILITY_NAMED_IAM \
 --parameters ParameterKey=BucketPrefix,ParameterValue=<resource bucket prefix> \
 ParameterKey=LambdaFunctionUri,ParameterValue=<Lambda Image URI>
 ```
@@ -76,7 +82,12 @@ Replace:
 * `<resource bucket prefix>` with the prefix you want to give the S3 buckets and 
 * `<Lambda Image URI>` with the URI of the Docker image in ECR.
 
-Once the stack create is complete the following will be returned:
+To check the status of the stack you can use the following command:
+```bash
+aws cloudformation describe-stacks --stack-name my-stack-name
+```
+
+Once the stack create is complete the following will be returned: with the `describe-stacks` command:
 * S3UserAccessKey: S3 user access key
 * S3UserSecretKey: S3 user secret key
 * InputBucket: S3 Input Bucket
