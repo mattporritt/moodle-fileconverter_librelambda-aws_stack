@@ -21,50 +21,15 @@ import boto3
 import os
 import logging
 import uuid
-import tarfile
 import subprocess
-import inspect
 from multiprocessing import Process, Pipe
 
 s3_client = boto3.client('s3')
 logger = logging.getLogger()
 
-INSTDIR = '/tmp/instdir'
-SOFFICE = INSTDIR + '/program/soffice.bin'  # Libre conversion executable.
-CONFDIR = INSTDIR + '/user/config'
-FONTDIR = INSTDIR + '/share/fonts'
-
-fonts_conf = inspect.cleandoc(f'''
-<?xml version="1.0"?>
-<!DOCTYPE fontconfig SYSTEM "fonts.dtd">
-<fontconfig>
-  <dir>{FONTDIR}</dir>
-  <!-- This may or not require font family specs.
-       Currently the only purpose is to stop fontconfig complaining. -->
-</fontconfig>
-''')
+SOFFICE = '/usr/local/lib/libreoffice/program/soffice.bin'  # Libre conversion executable.
 
 keep_files = not os.environ.get('KEEP_FILES', '') == ''
-
-
-def get_libreoffice():
-    """
-    This method downloads and extracts the Libre Office tar archive and extracts
-    it locally for the lambda function to use.
-    As this only needs to happen on Lambda 'cold starts' it first checks if Libre Office
-    is already available.
-    """
-
-    # Only get Libre Office if this is a cold start and we don't arleady have it.
-    if not os.path.exists(SOFFICE):
-        logger.info('Downloading and extracting Libre Office')
-        with tarfile.open(name='/opt/lo.tar.xz', mode="r|xz") as archive:
-            archive.extractall('/tmp')  # Extract to the temp directory of Lambda.
-        with open(CONFDIR + '/fonts.conf', 'w') as fc:
-            fc.write(fonts_conf)
-
-    else:
-        logger.info('Libre Office executable exists already.')
 
 
 def get_object_data(bucket, key):
@@ -110,7 +75,6 @@ def convert_file(filepath, targetformat):
         ]
 
     env = os.environ.copy()
-    env['FONTCONFIG_PATH'] = CONFDIR
     subprocess.run(commandargs, env=env, timeout=300, check=True)
     #  TODO: add some logging an error handling.
 
@@ -159,8 +123,6 @@ def lambda_handler(event, context):
     #  Set logging
     logging_level = os.environ.get('LoggingLevel', logging.ERROR)
     logger.setLevel(int(logging_level))
-
-    get_libreoffice()
 
     last_exception = None
     try:
