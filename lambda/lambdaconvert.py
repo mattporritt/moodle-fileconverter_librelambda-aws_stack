@@ -52,6 +52,22 @@ def get_object_data(bucket, key):
     return (targetformat, conversionid, sourcefileid)
 
 
+def process_convert_file(download_path, targetformat):
+    """
+    Wrapper for convert_file to handle retries and exceptions based on status codes.
+    """
+    status_code = convert_file(download_path, targetformat)
+    if status_code == 0:
+        logger.info("Conversion successful.")
+    elif status_code == 81:
+        logger.warning("Conversion failed with status 81, retrying once.")
+        status_code = convert_file(download_path, targetformat)  # Retry once
+        if status_code != 0:
+            raise Exception(f"Retry failed with status code: {status_code}")
+    else:
+        raise Exception(f"Conversion failed with status code: {status_code}")
+
+
 def convert_file(filepath, targetformat):
     """
     Convert the input file to PDF.
@@ -76,8 +92,12 @@ def convert_file(filepath, targetformat):
 
     env = os.environ.copy()
     env['HOME'] = '/tmp'  # Set home to /tmp to avoid permission issues.
-    subprocess.run(commandargs, env=env, timeout=300, check=True)
-    #  TODO: add some logging an error handling.
+    try:
+        subprocess.run(commandargs, env=env, timeout=300, check=True)
+        return 0  # Success
+    except subprocess.CalledProcessError as e:
+        return e.returncode  # Return the error code if subprocess fails
+    #  TODO: add some logging.
 
 
 def action_multiprocessing(multiprocesses):
@@ -121,7 +141,7 @@ def lambda_handler(event, context):
     Upload the converted document to the output S3 bucket.
     """
 
-    #  Set logging
+    #  Set logging, default to ERROR (40). DEBUG (10) is the lowest level.
     logging_level = os.environ.get('LoggingLevel', logging.ERROR)
     logger.setLevel(int(logging_level))
 
@@ -179,7 +199,7 @@ def process(record):
     # Convert file and remove original from input bucket.
     multiprocesses = (
         {
-            'method': convert_file,
+            'method': process_convert_file,
             'processargs': (download_path, targetformat,),
             'processkwargs': {}
         },

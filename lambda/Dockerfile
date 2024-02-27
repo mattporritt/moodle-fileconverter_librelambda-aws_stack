@@ -105,6 +105,9 @@ RUN export HOME=/tmp && \
     --outdir /tmp \
     /tmp/my_temp_file.rtf || [ $? -eq 81 ]
 
+# Fix permissions on config files.
+RUN chmod -R 777 /tmp/.config && chmod -R 777 /tmp/LibreOfficeDev/
+
 # Copy the lamnda function code. \
 COPY lambdaconvert.py ${LAMBDA_TASK_ROOT}
 
