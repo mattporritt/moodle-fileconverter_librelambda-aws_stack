@@ -100,9 +100,12 @@ Once the stack is deployed you can test the Lambda function by uploading a file 
 The Lambda function should convert the file to PDF and move it to the output bucket.
 
 The conversion process can be trigged by uploading a file to the input bucket using the AWS CLI.
+We also need to include metadata.
+
 The following command can be used to upload a file to the input bucket:
 ```bash
-aws s3 cp /path/to/your/file s3://<input-bucket-name>
+aws s3 cp /path/to/your/file s3://<input-bucket-name>  --metadata targetformat=pdf,id=123,sourcefileid=456
+
 ```
 Replace `/path/to/your/file` with the path to the file you want to upload and `<input-bucket-name>` with the name of the input bucket.
 
@@ -117,6 +120,9 @@ To download the converted file from the output bucket you can use the following 
 ```bash
 aws s3 cp s3://<output-bucket-name>/<file-name> /path/to/your/output/directory
 ```
+Replace `<output-bucket-name>` with the name of the output bucket and `<file-name>` with the name of the file you want to download.
+Because of the way the Moodle expects converted files to be named, the output name will be the same as the input file name.
+So if you uploaded a file called `example.docx` the output file will be called `example.docx`. You'll need to manually rename the file to `example.pdf` to test the conversion outside of Moodle LMS.
 
 ## Configuring Moodle LMS ##
 The Moodle plugin requires the following settings to be configured:

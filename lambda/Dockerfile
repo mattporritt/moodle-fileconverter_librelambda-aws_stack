@@ -91,7 +91,8 @@ RUN mkdir -p ${INSTDIR}/user/fonts && \
 # There are various other run time tricks to do this. BUt doing it at container build time
 # makes it easier to manage.
 RUN echo '{\\rtf1\\ansi\\ansicpg1252\\cocoartf1671\\cocoasubrtf600{\\fonttbl\\f0\\fswiss\\fcharset0 Helvetica;}\\f0\\fs24 \\cf0 This is a line of content in my RTF file.}' > /tmp/my_temp_file.rtf
-RUN /usr/local/lib/libreoffice/program/soffice.bin \
+RUN export HOME=/tmp && \
+    /usr/local/lib/libreoffice/program/soffice.bin \
     --headless \
     --invisible \
     --nodefault \

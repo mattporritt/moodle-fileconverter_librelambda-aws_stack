@@ -75,6 +75,7 @@ def convert_file(filepath, targetformat):
         ]
 
     env = os.environ.copy()
+    env['HOME'] = '/tmp'  # Set home to /tmp to avoid permission issues.
     subprocess.run(commandargs, env=env, timeout=300, check=True)
     #  TODO: add some logging an error handling.
 
@@ -157,8 +158,11 @@ def process(record):
     targetformat, conversionid, sourcefileid = get_object_data(bucket, key)
 
     download_path = '/tmp/{}{}'.format(uuid.uuid4(), key)
-    # Conversion appends .pdf extension to file.
-    upload_path = '{}.pdf'.format(download_path)
+    # Conversion replaces the file extension with .pdf.
+    # Split the original filename from its last extension.
+    base_name, _ = os.path.splitext(download_path)
+    # Append .pdf to the base name.
+    upload_path = f"{base_name}.pdf"
 
     # First multiprocessing split.
     # Download LibreOffice and input bucket object.
